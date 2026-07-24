@@ -1,0 +1,7 @@
+# Profile for running without Redis/Kafka (in-memory adapters).
+# Start with: --spring.profiles.active=local
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration

@@ -1,0 +1,61 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: uber-backend
+  profiles:
+    active: local
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      group-id: uber-backend
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    listener:
+      missing-topics-fatal: false
+
+uber:
+  matching:
+    search-radius-km: 5.0
+    max-candidates: 10
+    offer-timeout-seconds: 15
+  pricing:
+    base-fare: 40.0
+    per-km: 12.0
+    per-minute: 2.0
+    min-fare: 60.0
+    currency: INR
+  surge:
+    geohash-precision: 6
+    demand-threshold: 3
+    supply-threshold: 2
+    max-multiplier: 3.0
+  location:
+    redis-geo-key: drivers:geo
+    stale-after-seconds: 60
+  kafka:
+    topics:
+      location-updates: location.updates
+      trip-events: trip.events
+      notifications: notifications
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+logging:
+  level:
+    com.uber.backend: INFO
