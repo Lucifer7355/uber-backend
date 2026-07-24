@@ -1,71 +1,55 @@
-# Uber Backend ★★★★★
+# Uber Backend
 
-Ride-hailing **backend** (no frontend) demonstrating distributed systems, realtime, caching, concurrency, and system design.
+Backend for a ride-hailing system (Java 21, Spring Boot). No frontend.
 
-| Capability | Implementation |
-|---|---|
-| Driver Matching | GEO radius + nearest strategy + atomic claim |
-| Geo Hashing | Custom base32 encoder for surge cells |
-| Redis GEO | `GEOADD` / radius query (prod profile) |
-| Kafka | Location, trip, notification topics |
-| Location Updates | Drivers ping → spatial index + events |
-| Trip Service | State machine lifecycle |
-| Pricing Service | Distance + time + min fare |
-| Surge Pricing | Demand/supply per geohash cell |
-| Notification | Kafka/in-memory bus → WebSocket push |
-| WebSockets | `/ws/trips/{userId}` realtime fan-out |
+Things this covers:
+- driver matching with geo queries
+- geohashing for surge zones
+- Redis GEO for live driver locations
+- Kafka for location / trip / notification events
+- trip lifecycle + pricing + surge
+- WebSocket push for trip updates
 
----
-
-## Architecture
+## How it fits together
 
 ```
-                    ┌─────────────┐
-   Driver pings ──► │ Location    │──► Redis GEO (or in-memory)
-                    │ Service     │──► Kafka: location.updates
-                    └──────┬──────┘
-                           │ nearby candidates
-                    ┌──────▼──────┐
-   Rider request ─► │ Matching    │──► claim driver (CAS)
-                    │ + Trip svc  │──► Trip state machine
-                    └──────┬──────┘
-           ┌───────────────┼───────────────┐
-           ▼               ▼               ▼
-     Pricing/Surge    Kafka trip.events   notifications
-     (geohash cells)                      │
-                                          ▼
-                                   WebSocket push
+Driver location pings
+        │
+        ▼
+ Location Service ──► Redis GEO (or in-memory on local)
+        │             Kafka: location.updates
+        ▼
+ Matching + Trip ──► claim nearest driver, trip state machine
+        │
+        ├── Pricing / Surge (geohash cells)
+        ├── Kafka: trip.events
+        └── notifications ──► WebSocket (/ws/trips/{userId})
 ```
 
-**Modular monolith** with clear service boundaries — each package can become a microservice later.
+`local` profile uses in-memory stores so you can run without Docker. Drop `local` and bring up `docker compose` when you want real Redis + Kafka.
 
----
-
-## Quick start (no Docker)
+## Run
 
 ```bash
+# demo walkthrough (no Docker)
 mvn spring-boot:run -Dspring-boot.run.profiles=local,demo
-```
 
-Runs with in-memory GEO + in-memory event bus and prints an interview-style walkthrough.
+# API only
+mvn spring-boot:run
 
-```bash
+# tests
 mvn test
-mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-Server: `http://localhost:8080`
+App: http://localhost:8080
 
----
-
-## Production-style infra (Redis + Kafka)
+### Redis + Kafka
 
 ```bash
 docker compose up -d
-mvn spring-boot:run -Dspring-boot.run.profiles=default
 ```
 
-(Use a profile that is **not** `local` so Redis/Kafka beans activate.)
+Then start the app **without** the `local` profile:
 
 ```bash
 # PowerShell
@@ -73,18 +57,9 @@ $env:SPRING_PROFILES_ACTIVE=""
 mvn spring-boot:run
 ```
 
-Or explicitly:
+## APIs
 
-```bash
-mvn spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=
-```
-
----
-
-## API cheat sheet
-
-### 1. Driver location update
-
+**Update driver location**
 ```http
 POST /api/v1/locations
 Content-Type: application/json
@@ -97,21 +72,18 @@ Content-Type: application/json
 }
 ```
 
-### 2. Nearby drivers (GEO)
-
+**Nearby drivers**
 ```http
 GET /api/v1/locations/nearby?lat=12.9352&lon=77.6245&radiusKm=5&limit=10
 ```
 
-### 3. Fare estimate + surge
-
+**Fare / surge**
 ```http
 GET /api/v1/pricing/estimate?pickupLat=12.9352&pickupLon=77.6245&dropoffLat=12.9716&dropoffLon=77.5946
 GET /api/v1/pricing/surge?lat=12.9352&lon=77.6245
 ```
 
-### 4. Request trip → lifecycle
-
+**Trip**
 ```http
 POST /api/v1/trips
 {
@@ -128,42 +100,26 @@ POST /api/v1/trips/{tripId}/complete
 POST /api/v1/trips/{tripId}/cancel
 ```
 
-### 5. WebSocket
+**WebSocket:** `ws://localhost:8080/ws/trips/R1`
 
-Connect: `ws://localhost:8080/ws/trips/R1`  
-Receives JSON notifications when trip events fire.
-
----
-
-## Package map
+## Package layout
 
 ```
 com.uber.backend
-├── api/                 REST controllers
-├── common/geo           GeoPoint, GeoHash, Haversine
-├── location/            Redis GEO + location stream
-├── matching/            Strategy + concurrent claim
-├── pricing/             Fare + surge
-├── trip/                State machine + repository
-├── notification/        Kafka consumer + WebSocket
-├── event/               EventPublisher (Kafka | in-memory)
-└── demo/                RideFlowDemo (profile=demo)
+├── api/
+├── common/geo          GeoPoint, GeoHash, Haversine
+├── location/           Redis GEO + location updates
+├── matching/           nearest-driver matching + claim
+├── pricing/            fare + surge
+├── trip/               state machine
+├── notification/       Kafka/in-memory → WebSocket
+├── event/              EventPublisher (Kafka or in-memory)
+└── demo/               RideFlowDemo (profile=demo)
 ```
 
----
+## Notes
 
-## Design highlights (interview talking points)
-
-1. **Redis GEO** — O(log N) nearby driver queries instead of scanning every driver.
-2. **Geohash surge cells** — marketplace control loop without global locks.
-3. **Kafka** — decouples location ingestion, trip ledger, and notifications.
-4. **Atomic driver claim** — `ConcurrentHashMap.putIfAbsent` prevents double-booking under concurrency.
-5. **Trip state machine** — illegal transitions fail fast (`REQUESTED ↛ COMPLETED`).
-6. **WebSockets** — push trip updates without polling.
-7. **Ports & adapters** — `DriverLocationRepository` / `EventPublisher` swap Redis+Kafka ↔ in-memory for tests.
-
----
-
-## Resume one-liner
-
-> Built an Uber-like ride backend in Java 21 / Spring Boot with Redis GEO driver matching, geohash surge pricing, Kafka event pipelines, trip state machines, and WebSocket notifications — covering distributed systems, realtime, caching, and concurrency.
+- Nearby search uses Redis GEO in prod; Haversine over a map locally.
+- Surge is per geohash cell based on demand vs supply.
+- Driver claim uses `putIfAbsent` so two riders don't get the same driver.
+- Trip status changes are validated (you can't jump `MATCHED` → `COMPLETED`).

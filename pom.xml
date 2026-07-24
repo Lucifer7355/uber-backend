@@ -15,7 +15,7 @@
     <artifactId>uber-backend</artifactId>
     <version>1.0.0</version>
     <name>uber-backend</name>
-    <description>Uber-like ride backend: driver matching, Redis GEO, Kafka, surge pricing, WebSockets</description>
+    <description>Ride-hailing backend with matching, Redis GEO, Kafka, and WebSockets</description>
 
     <properties>
         <java.version>21</java.version>
